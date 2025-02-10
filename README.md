@@ -38,27 +38,15 @@ This should create the `pystk_actor.pth` file (**don't change its name**) that c
 
 # Testing the actor
 
-## 1. Create the ZIP file
+You can use [master-dac](https://pypi.org/project/master_dac/) to test your agent (you can even experiment with races between different actors to select the one of your choice):
 
-After learning your model, create the ZIP file containing the code and the actor parameters with:
-
+To test your agent directly (this is what will be used to evaluate your project), you can use
 ```sh
-# To be run from the base directory
-(cd stk_actor; zip -r ../actor.zip .)
-```
-
-## 2. Test
-
-You can use [master-dac](https://pypi.org/project/master_dac/) to test the zip file (you can even experiment with races between different actors to select the one of your choice):
-
-```sh
-
 # Usage: master-dac rld stk-race [OPTIONS] [ZIP_FILES|MODULE]...
-
-master-dac rld stk-race --hide stk_actor.zip
+master-dac rld stk-race --hide <path to folder containing stk_actor>
 ```
 
-To test your agent directly (for debug purposes), you can also use
+To test your agent directly (for debug purposes), you can also use the module name (so you can compare different actors in the same project)
 ```sh
 PYTHONPATH=. master-dac rld stk-race --hide stk_actor
 ```
