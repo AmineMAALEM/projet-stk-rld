@@ -35,18 +35,48 @@ PYTHONPATH=. python -m stk_actor.learn
 This should create the `pystk_actor.pth` file (**don't change its name**) that contains the parameters of your model. The file will be loaded using `torch.load(...)` and the data will be transmitted as  a parameter to `get_actor` (see `pystk_actor.py`).
 
 
-
 # Testing the actor
 
-You can use [master-dac](https://pypi.org/project/master_dac/) to test your agent (you can even experiment with races between different actors to select the one of your choice):
+You can use [master-mind](https://pypi.org/project/su_master_mind/) to test your agent (you can even experiment with races between different actors to select the one of your choice):
 
-To test your agent directly (this is what will be used to evaluate your project), you can use
+To test your agent, you can also use the module name (so you can compare different actors in the same project)
 ```sh
-# Usage: master-dac rld stk-race [OPTIONS] [ZIP_FILES|MODULE]...
-master-dac rld stk-race --hide <path to folder containing stk_actor>
+# Replace stk_actor by something else if testing different actors
+PYTHONPATH=. master-mind rl stk-race --hide stk_actor
 ```
 
-To test your agent directly (for debug purposes), you can also use the module name (so you can compare different actors in the same project)
-```sh
-PYTHONPATH=. master-dac rld stk-race --hide stk_actor
-```
+# 🧭 Submit your work on the `evaluation` branch
+
+1. **Commit your final work**
+
+   ```bash
+   # Add files
+   git add ...
+   git commit -m "Final version for evaluation"
+   ```
+
+   Ensure that all relevant files are versioned with `git status` – in particular the `pystk_actor.pth`.
+
+2. **Switch (or create) the `evaluation` branch**
+
+   ```bash
+   git fetch origin
+   git checkout -B evaluation origin/evaluation || git checkout -b evaluation
+   ```
+
+
+3. **Merge your work and push**
+
+   ```bash
+   git merge main        # or your working branch
+   git push origin evaluation
+   ```
+
+   In case of problem with the `pystk_actor.pth` file, use this
+   ```bash
+    # overwrite binary file
+    git checkout main -- stk_actor/pystk_actor.pth
+    git add stk_actor/pystk_actor.pth
+   ```
+
+4. ✅ **Check online** that the `evaluation` branch contains your latest commit.
