@@ -18,7 +18,7 @@ class Actor(Agent):
 
     def forward(self, t: int):
         # Computes probabilities over actions
-        pass
+        raise NotImplementedError()
 
 
 class ArgmaxActor(Agent):
@@ -26,11 +26,11 @@ class ArgmaxActor(Agent):
 
     def forward(self, t: int):
         # Selects the best actions according to the policy
-        pass
+        raise NotImplementedError()
 
 
 class SamplingActor(Agent):
-    """Samples random actions"""
+    """Just sample random actions"""
 
     def __init__(self, action_space: gym.Space):
         super().__init__()
