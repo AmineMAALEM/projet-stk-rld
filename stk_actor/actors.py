@@ -7,14 +7,20 @@ class Actor(Agent):
     def __init__(self, observation_space, action_space):
         super().__init__()
         
-        # 1. Input Size
-        # With the wrappers in pystk_actor, this should be 4 * original_size
-        if isinstance(observation_space, gym.spaces.Box):
-            input_size = observation_space.shape[0]
-        else:
-            input_size = 10 # Fallback
+        # --- 1. Define Sizes ---
+        # The Network expects 616 (4 frames x 154)
+        self.net_input_size = 616
+        self.num_stack = 4
+        
+        # Calculate the size of ONE frame
+        # If we divide 616 by 4, we get 154.
+        self.single_frame_size = self.net_input_size // self.num_stack
 
-        # 2. Output Size (Actions)
+        # --- 2. Internal Memory for Stacking ---
+        # We store the history of frames here
+        self.history = None 
+
+        # --- 3. Output Size ---
         if isinstance(action_space, gym.spaces.MultiDiscrete):
             self.nvec = action_space.nvec
             self.output_dims = self.nvec.tolist()
@@ -27,15 +33,15 @@ class Actor(Agent):
             output_size = 4
             self.is_multi = False
 
-        # 3. Normalization Buffers
-        # The .pth file will fill these with the values from VecNormalize
-        self.register_buffer("obs_mean", torch.zeros(input_size))
-        self.register_buffer("obs_var", torch.ones(input_size))
+        # --- 4. Normalization Buffers ---
+        # Loaded from pystk_actor.pth (Size 616)
+        self.register_buffer("obs_mean", torch.zeros(self.net_input_size))
+        self.register_buffer("obs_var", torch.ones(self.net_input_size))
         self.epsilon = 1e-8
 
-        # 4. The Network (Matches SB3 PPO MlpPolicy)
+        # --- 5. The Network ---
         self.net = nn.Sequential(
-            nn.Linear(input_size, 64),
+            nn.Linear(self.net_input_size, 64),
             nn.Tanh(),
             nn.Linear(64, 64),
             nn.Tanh(),
@@ -43,18 +49,49 @@ class Actor(Agent):
         )
 
     def forward(self, t: int, **kwargs):
-        # Get stacked observation
+        # 1. Get the current single frame from the environment
+        # Expected size: (Batch, 154) or just (154)
         obs = self.get(("env/env_obs", t))
         
-        # Normalize
-        # (obs - mean) / sqrt(var + eps)
-        # Note: self.obs_mean is loaded from the .pth file
-        obs_norm = (obs - self.obs_mean) / torch.sqrt(self.obs_var + self.epsilon)
+        # Ensure it's a tensor
+        if not torch.is_tensor(obs):
+            obs = torch.tensor(obs)
+            
+        # Handle Batch Dimension: 
+        # If input is 1D (154,), make it 2D (1, 154)
+        if obs.dim() == 1:
+            obs = obs.unsqueeze(0)
+            
+        batch_size = obs.shape[0]
 
-        # Forward Pass
+        # 2. Manage History (Frame Stacking)
+        # If t=0 or history is empty, initialize it by repeating the first frame
+        if t == 0 or self.history is None or self.history.shape[0] != batch_size:
+            # Create stack: (Batch, 4, 154)
+            self.history = obs.unsqueeze(1).repeat(1, self.num_stack, 1)
+        else:
+            # Shift history: Drop oldest, add newest
+            # self.history is (Batch, 4, 154)
+            # Roll to the left
+            self.history = torch.roll(self.history, shifts=-1, dims=1)
+            # Update last frame
+            self.history[:, -1, :] = obs
+
+        # 3. Flatten History
+        # Transform (Batch, 4, 154) -> (Batch, 616)
+        obs_stacked = self.history.view(batch_size, -1)
+        
+        # Verify device (ensure history is on same device as weights)
+        if obs_stacked.device != self.obs_mean.device:
+            obs_stacked = obs_stacked.to(self.obs_mean.device)
+
+        # 4. Normalize (Using the 616 stats)
+        obs_norm = (obs_stacked - self.obs_mean) / torch.sqrt(self.obs_var + self.epsilon)
+
+        # 5. Predict
         scores = self.net(obs_norm)
         
-        # Action Selection
+        # 6. Action Logic
         if self.is_multi:
             pointer = 0
             actions = []
@@ -69,7 +106,7 @@ class Actor(Agent):
 
         self.set(("action", t), final_action)
 
-# Dummy classes
+# Keep dummy classes to avoid import errors
 class MyWrapper(gym.ActionWrapper):
     def __init__(self, env, option: int): super().__init__(env)
     def action(self, action): return action
