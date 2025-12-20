@@ -7,20 +7,18 @@ class PPOInferenceActor(Agent):
     def __init__(self, state: dict):
         super().__init__()
         
-        # 1. Récupération des stats de normalisation depuis le dictionnaire
+        # 1. Récupération des stats de normalisation
         self.register_buffer("obs_mean", state["norm_mean"])
         self.register_buffer("obs_var", state["norm_var"])
         self.register_buffer("epsilon", state["norm_epsilon"])
         self.register_buffer("clip_value", state["norm_clip"])
         
-        # 2. Reconstruction de l'architecture PPO (MlpPolicy défaut SB3)
-        # L'observation_space après le FrameStacking est de taille 4 x (taille après flatten)
-        # Ton flatten donne environ 105 features, donc 4*105 = 420.
-        # On récupère la taille exacte depuis la moyenne de normalisation.
+        # 2. Définition de l'architecture
+        # L'input dim est déterminée par la taille de la moyenne sauvegardée (ex: 448)
         input_dim = self.obs_mean.shape[0]
-        action_dim = 15 # D'après ton DiscreteActionWrapper
+        action_dim = 15 # Selon ton DiscreteActionWrapper
         
-        # Réseau partagé (feature extractor)
+        # Réseau partagé (Feature Extractor) - Structure MLP classique SB3
         self.shared_net = nn.Sequential(
             nn.Linear(input_dim, 64),
             nn.Tanh(),
@@ -28,13 +26,12 @@ class PPOInferenceActor(Agent):
             nn.Tanh()
         )
         
-        # Tête de l'acteur (action)
+        # Tête de l'acteur (Action Net)
         self.action_net = nn.Linear(64, action_dim) 
         
-        # 3. Chargement des poids depuis le dictionnaire
+        # 3. Chargement des poids depuis le dictionnaire exporté
         weights = state["model_state_dict"]
         
-        # On charge les poids dans notre architecture PyTorch
         self.shared_net[0].load_state_dict({
             'weight': weights['mlp_extractor.policy_net.0.weight'],
             'bias': weights['mlp_extractor.policy_net.0.bias']
@@ -49,22 +46,22 @@ class PPOInferenceActor(Agent):
         })
 
     def forward(self, t: int, **kwargs):
-        # Récupère l'observation du workspace BBRL
+        # Récupère l'observation du workspace
         obs = self.get(("env/env_obs", t))
         
-        # 1. Normalisation MANUELLE (comme le fait VecNormalize)
+        # 1. Normalisation MANUELLE (VecNormalize reproduction)
         obs = (obs - self.obs_mean) / torch.sqrt(self.obs_var + self.epsilon)
         obs = torch.clamp(obs, -self.clip_value, self.clip_value)
         
-        # 2. Passage dans le réseau de neurones
+        # 2. Passage dans le réseau
         features = self.shared_net(obs)
         action_logits = self.action_net(features)
         
-        # 3. Stocke les logits pour l'ArgmaxActor
+        # 3. Stockage des scores
         self.set(("action_logits", t), action_logits)
 
 class ArgmaxActor(Agent):
-    """Sélectionne l'action avec le plus grand score (logit)"""
+    """Sélectionne l'action avec la plus grande probabilité"""
     def __init__(self):
         super().__init__()
 

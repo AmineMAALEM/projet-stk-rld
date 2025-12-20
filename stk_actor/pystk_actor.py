@@ -3,18 +3,19 @@ from bbrl.agents import Agents, Agent
 import gymnasium as gym
 import torch
 
-# IMPORTS RELATIFS (très important)
-from .wrappers import FeatureEngineeringWrapper, DiscreteActionWrapper, FrameStackingWrapper#, AutoKillWrapper
+# Imports relatifs
+from .wrappers_f import FeatureEngineeringWrapper, DiscreteActionWrapper, FrameStackingWrapper, AutoKillWrapper
 from .actors import PPOInferenceActor, ArgmaxActor
 
+# Nom de l'environnement de BASE (ne pas changer si tu utilises tes wrappers par dessus)
 env_name = "supertuxkart/simple-v0" 
 
-# METS LE NOM DE TON ÉQUIPE ICI
-player_name = "Amine_Kart"
+# Change ça avec ton vrai nom d'équipe !
+player_name = "Vroom Vroom"
 
 def get_wrappers() -> List[Callable[[gym.Env], gym.Wrapper]]:
     """
-    Retourne la liste des wrappers. L'ORDRE DOIT ÊTRE IDENTIQUE À L'ENTRAÎNEMENT.
+    Retourne la liste des wrappers dans l'ordre EXACT de l'entraînement.
     """
     return [
         lambda env: FeatureEngineeringWrapper(env),
@@ -28,16 +29,16 @@ def get_actor(
     action_space: gym.spaces.Space,
 ) -> Agent:
     """
-    Crée l'agent BBRL qui sera utilisé pour la course.
+    Crée l'agent BBRL.
     """
     if state is None:
-        print("FATAL: Aucun fichier pystk_actor.pth trouvé. L'agent ne peut pas être créé.")
-        # Le serveur plantera ici, ce qui est normal s'il n'y a pas de .pth
-        raise FileNotFoundError("pystk_actor.pth not loaded by the evaluation system.")
+        # Fallback si pas de fichier (ne devrait pas arriver sur le serveur si le git est ok)
+        return None 
 
+    # On instancie l'acteur PPO avec les poids chargés
     actor_policy = PPOInferenceActor(state)
     
-    # On chaîne les deux agents : le premier calcule les scores, le second choisit le meilleur.
+    # On retourne la combinaison : Calcul des Logits -> Choix de l'action Max
     return Agents(actor_policy, ArgmaxActor())
 # from typing import List, Callable
 # from bbrl.agents import Agents, Agent
