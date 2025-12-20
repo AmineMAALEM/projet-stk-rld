@@ -171,3 +171,64 @@ class FrameStackingWrapper(gym.ObservationWrapper):
 
     def _get_stacked_obs(self):
         return np.concatenate(list(self.frames)).astype(np.float32)
+    
+
+class DiscreteActionWrapper(gym.Wrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        
+        dummy_obs, _ = self.env.reset()
+        flat_size = self._flatten_obs(dummy_obs).shape[0]
+        self.observation_space = spaces.Box(
+            low=-np.inf, high=np.inf, shape=(flat_size,), dtype=np.float32
+        )
+
+        # Liste d'actions optimisée (15 actions)
+        # Format: (Steer, Accel, Brake, Drift, Fire, Nitro, Rescue)
+        self.actions_list = [
+            # --- VITESSE MAX (0-2) ---
+            (0.0, 1.0, 0, 0, 0, 0, 0),   # 0: Tout droit (Fond)
+            (-0.6, 1.0, 0, 0, 0, 0, 0),  # 1: Gauche (Fond)
+            (0.6, 1.0, 0, 0, 0, 0, 0),   # 2: Droite (Fond)
+            
+            # --- DRIFT TECHNIQUE (3-6) ---
+            (-1.0, 1.0, 0, 1, 0, 0, 0),  # 3: Drift Gauche FORT
+            (1.0, 1.0, 0, 1, 0, 0, 0),   # 4: Drift Droite FORT
+            (-0.5, 1.0, 0, 1, 0, 0, 0),  # 5: Drift Gauche MOYEN
+            (0.5, 1.0, 0, 1, 0, 0, 0),   # 6: Drift Droite MOYEN
+            
+            # --- VITESSE LENTE / PRÉCISION (7-9) ---
+            (0.0, 0.3, 0, 0, 0, 0, 0),   # 7: Tout droit (Lent)
+            (-0.6, 0.3, 0, 0, 0, 0, 0),  # 8: Gauche (Lent)
+            (0.6, 0.3, 0, 0, 0, 0, 0),   # 9: Droite (Lent)
+            
+            # --- FREIN & RECUL (10-12) ---
+            (0.0, 0.0, 1, 0, 0, 0, 0),   # 10: Frein / Recul Droit
+            (-1.0, 0.0, 1, 0, 0, 0, 0),  # 11: Recul Gauche
+            (1.0, 0.0, 1, 0, 0, 0, 0),   # 12: Recul Droite
+            
+            # --- BONUS (13-14) ---
+            (0.0, 1.0, 0, 0, 1, 0, 0),   # 13: Fire
+            (0.0, 1.0, 0, 0, 0, 1, 0),   # 14: Nitro
+        ]
+        self.action_space = spaces.Discrete(len(self.actions_list))
+
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
+        return self._flatten_obs(obs), info
+
+    def step(self, action_idx):
+        vals = self.actions_list[action_idx]
+        
+        game_action = {
+            'steer': np.array([vals[0]], dtype=np.float32),
+            'acceleration': np.array([vals[1]], dtype=np.float32),
+            'brake': vals[2],
+            'drift': vals[3],
+            'fire': vals[4],
+            'nitro': vals[5],
+            'rescue': vals[6] # Sera toujours 0 ici
+        }
+        
+        obs, reward, terminated, truncated, info = self.env.step(game_action)
+        return self._flatten_obs(obs), reward, terminated, truncated, info
