@@ -2,25 +2,26 @@ from typing import List, Callable
 from bbrl.agents import Agents, Agent
 import gymnasium as gym
 import torch
+import numpy as np
 
-# Imports relatifs
-from .wrappers import FeatureEngineeringWrapper, DiscreteActionWrapper, FrameStackingWrapper
-from .actors import PPOInferenceActor, ArgmaxActor
+from .actors import Actor
+from .wrappers import (
+    FeatureEngineeringWrapper, 
+    ActionConversionWrapper, 
+    FlattenWrapper, 
+    FrameStackingWrapper
+)
 
-# Nom de l'environnement de BASE (ne pas changer si tu utilises tes wrappers par dessus)
-env_name = "supertuxkart/simple-v0" 
-
-# Change ça avec ton vrai nom d'équipe !
-player_name = "Vroom Vroom"
+# Indication pour l'affichage, mais le serveur force multi-full-v0
+env_name = "supertuxkart/simple-v0"
+player_name = "Team_PPO_Rocket"
 
 def get_wrappers() -> List[Callable[[gym.Env], gym.Wrapper]]:
-    """
-    Retourne la liste des wrappers dans l'ordre EXACT de l'entraînement.
-    """
     return [
         lambda env: FeatureEngineeringWrapper(env),
-        lambda env: DiscreteActionWrapper(env),
-        lambda env: FrameStackingWrapper(env, n_stack=4)
+        lambda env: ActionConversionWrapper(env),
+        lambda env: FlattenWrapper(env),
+        lambda env: FrameStackingWrapper(env, n_stack=4),
     ]
 
 def get_actor(
@@ -28,18 +29,35 @@ def get_actor(
     observation_space: gym.spaces.Space,
     action_space: gym.spaces.Space,
 ) -> Agent:
-    """
-    Crée l'agent BBRL.
-    """
-    if state is None:
-        # Fallback si pas de fichier (ne devrait pas arriver sur le serveur si le git est ok)
-        return None 
-
-    # On instancie l'acteur PPO avec les poids chargés
-    actor_policy = PPOInferenceActor(state)
     
-    # On retourne la combinaison : Calcul des Logits -> Choix de l'action Max
-    return Agents(actor_policy, ArgmaxActor())
+    actor = Actor(observation_space, action_space)
+
+    if state is None:
+        return actor
+
+    if "model_state_dict" in state:
+        actor.load_state_dict(state["model_state_dict"])
+    else:
+        actor.load_state_dict(state)
+        
+    if "norm_mean" in state:
+        mean = state["norm_mean"]
+        var = state["norm_var"]
+        
+        # Sécurité Numpy -> Tensor
+        if not isinstance(mean, torch.Tensor):
+            mean = torch.as_tensor(mean).float()
+        if not isinstance(var, torch.Tensor):
+            var = torch.as_tensor(var).float()
+            
+        actor.set_normalization_stats(
+            mean=mean,
+            var=var,
+            epsilon=state.get("norm_epsilon", 1e-8),
+            clip=state.get("norm_clip", 10.0)
+        )
+
+    return actor
 # from typing import List, Callable
 # from bbrl.agents import Agents, Agent
 # import gymnasium as gym
