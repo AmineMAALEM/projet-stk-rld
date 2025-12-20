@@ -1,4 +1,4 @@
-# PySTK2-gymnasium / BBRL project template
+# PySTK2-gymnasium / BBRL project templatee
 
 This project template contains a basic structure that could be used for your PySTK2/BBRL project.
 For information about the PySTK2 gymnasium environment, please look at the [corresponding github page](https://github.com/bpiwowar/pystk2-gymnasium)
