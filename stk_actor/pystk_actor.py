@@ -4,7 +4,7 @@ import gymnasium as gym
 import torch
 
 # Imports relatifs
-from .wrappers_f import FeatureEngineeringWrapper, DiscreteActionWrapper, FrameStackingWrapper, AutoKillWrapper
+from .wrappers import FeatureEngineeringWrapper, DiscreteActionWrapper, FrameStackingWrapper
 from .actors import PPOInferenceActor, ArgmaxActor
 
 # Nom de l'environnement de BASE (ne pas changer si tu utilises tes wrappers par dessus)
