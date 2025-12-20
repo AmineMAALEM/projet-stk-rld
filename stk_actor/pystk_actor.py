@@ -6,13 +6,20 @@ import numpy as np
 
 from .actors import Actor
 from .wrappers import UltraWrapper, ActionConversionWrapper
+from pystk2_gymnasium.stk_wrappers import ConstantSizedObservations , PolarObservations
 
 env_name = "supertuxkart/simple-v0"
-player_name = "Team_PPO_Final"
+player_name = "Vroom Vroom"
 
 def get_wrappers() -> List[Callable[[gym.Env], gym.Wrapper]]:
     return [
+        lambda env: ConstantSizedObservations(env),
+        lambda env: PolarObservations(env),
+        
+        
         # Action wrapper en premier (intérieur) ou deuxième peu importe ici car distinct
+        
+        
         lambda env: ActionConversionWrapper(env),
         # UltraWrapper fait tout le reste
         lambda env: UltraWrapper(env)
