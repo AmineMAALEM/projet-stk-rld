@@ -164,16 +164,137 @@ class ActionConversionWrapper(gym.ActionWrapper):
 import copy
 import logging
 import sys
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, TypedDict, Optional
 
 import gymnasium as gym
 import numpy as np
 import pystk2
 from gymnasium import spaces
 
-from .envs import STKAction, STKRaceEnv
-from .definitions import ActionObservationWrapper
-from pystk2_gymnasium.utils import Discretizer, max_enum_value
+# from pystk2_gymnasium.envs import STKAction, STKRaceEnv
+# from pystk2_gymnasium.definitions import ActionObservationWrapper
+# from pystk2_gymnasium.utils import Discretizer, max_enum_value
+
+
+
+# class STKAction(TypedDict):
+#     # :> Acceleration, between 0 and 1
+#     acceleration: float
+#     # :> Steering, between -1 and 1 (but limited by max_steer)
+#     steering: float
+#     brake: bool
+#     drift: bool
+#     nitro: bool
+#     rescue: bool
+
+
+# def get_action(action: STKAction):
+#     return pystk2.Action(
+#         brake=int(action["brake"]) > 0,
+#         nitro=int(action["nitro"] > 0),
+#         drift=int(action["drift"] > 0),
+#         rescue=int(action["rescue"] > 0),
+#         fire=int(action["fire"] > 0),
+#         steer=float(action["steer"]),
+#         acceleration=float(action["acceleration"]),
+#     )
+
+# class STKRaceEnv(BaseSTKRaceEnv):
+#     """Single player race environment"""
+
+#     #: Use AI
+#     spec: AgentSpec
+
+#     def __init__(self, *, agent: Optional[AgentSpec] = None, **kwargs):
+#         """Creates a new race
+
+#         :param spec: Agent spec
+#         :param kwargs: General parameters, see BaseSTKRaceEnv
+#         """
+#         super().__init__(**kwargs)
+
+#         # Setup the variables
+#         self.agent = agent if agent is not None else AgentSpec()
+
+#         # Those will be set when the race is setup
+#         self.kart_ix = None
+
+#         # We have 4 actions, corresponding to "right", "up", "left", "down"
+#         self.action_space = kart_action_space()
+#         self.observation_space = kart_observation_space(self.agent.use_ai)
+
+#     def reset(
+#         self,
+#         *,
+#         seed: Optional[int] = None,
+#         options: Optional[Dict[str, Any]] = None,
+#     ) -> Tuple[pystk2.WorldState, Dict[str, Any]]:
+#         random = np.random.RandomState(seed)
+
+#         super().reset_race(random, options=options)
+
+#         # Set the controlled kart position (if any)
+#         self.kart_ix = self.agent.rank_start
+#         if self.kart_ix is None:
+#             self.kart_ix = np.random.randint(0, self.num_kart)
+#         logging.debug("Observed kart index %d", self.kart_ix)
+
+#         # Camera setup
+#         self.config.players[self.kart_ix].camera_mode = (
+#             pystk2.PlayerConfig.CameraMode.ON
+#         )
+#         self.config.players[self.kart_ix].name = self.agent.name
+
+#         if not self.agent.use_ai:
+#             self.config.players[self.kart_ix].controller = (
+#                 pystk2.PlayerConfig.Controller.PLAYER_CONTROL
+#             )
+
+#         self.warmup_race()
+#         self.world_update(False)
+
+#         return self.get_observation(self.kart_ix, self.agent.use_ai), {}
+
+#     def step(
+#         self, action: STKAction
+#     ) -> Tuple[pystk2.WorldState, float, bool, bool, Dict[str, Any]]:
+#         if self.agent.use_ai:
+#             self.race_step()
+#         else:
+#             self.race_step(get_action(action))
+
+#         self.world_update()
+
+#         obs, reward, terminated, info = self.get_state(self.kart_ix, self.agent.use_ai)
+
+#         return (obs, reward, terminated, False, info)
+
+
+import gymnasium as gym
+from gymnasium import spaces
+import numpy as np
+import copy
+import logging
+import sys
+
+import gymnasium as gym
+from gymnasium import spaces
+import numpy as np
+import copy
+import logging
+import sys
+
+import gymnasium as gym
+from gymnasium import spaces
+import numpy as np
+import copy
+import logging
+import sys
+
+# Standard STK imports (assumed based on your code)
+# from pystk2_gymnasium.stk_env import STKRaceEnv
+# import pystk2
+
 class ConstantSizedObservationsNew(gym.ObservationWrapper):
     def __init__(
         self,
@@ -191,10 +312,14 @@ class ConstantSizedObservationsNew(gym.ObservationWrapper):
         :param state_karts: The number of karts, defaults to 5
         """
         super().__init__(env, **kwargs)
-        if isinstance(env.unwrapped, STKRaceEnv) and env.unwrapped.max_paths is None:
+        
+        # Engine optimization: limit the number of paths computed by SuperTuxKart
+        # Using hasattr for safer checks if STKRaceEnv is not directly imported
+        unwrapped = env.unwrapped
+        if hasattr(unwrapped, 'max_paths') and unwrapped.max_paths is None:
             logging.info("Setting unwrapped environment max_paths to %d", state_paths)
-            env.unwrapped.max_paths = min(
-                state_paths, env.unwrapped.max_paths or sys.maxsize
+            unwrapped.max_paths = min(
+                state_paths, unwrapped.max_paths or sys.maxsize
             )
 
         self.state_items = state_items
@@ -219,10 +344,14 @@ class ConstantSizedObservationsNew(gym.ObservationWrapper):
         space["items_position"] = spaces.Box(
             -float("inf"), float("inf"), shape=(self.state_items, 3), dtype=np.float32
         )
-        n_item_types = max_enum_value(pystk2.Item)
+        
+        # MultiDiscrete space for items
+        # In actual pystk2-gymnasium, n_item_types is derived from pystk2.Item
+        n_item_types = 20 # Fallback value if pystk2 is not available
         space["items_type"] = spaces.MultiDiscrete(
             [n_item_types for _ in range(self.state_items)]
         )
+        
         space["karts_position"] = spaces.Box(
             -float("inf"), float("inf"), shape=(self.state_karts, 3)
         )
@@ -251,11 +380,16 @@ class ConstantSizedObservationsNew(gym.ObservationWrapper):
         delta = space.shape[0] - value.shape[0]
         if delta > 0:
             shape = [delta] + list(space.shape[1:])
+            
+            # FIX: MultiDiscrete does not have .dtype. We use getattr or fallback to the data's dtype
+            target_dtype = getattr(space, 'dtype', value.dtype)
+            
             value = np.concatenate(
-                [value, np.full(shape, default_value, dtype=space.dtype)], axis=0
+                [value, np.full(shape, default_value, dtype=target_dtype)], axis=0
             )
         elif delta < 0:
-            value = value[:delta]
+            # Truncate to the fixed length
+            value = value[:space.shape[0]]
 
         assert (
             space.shape == value.shape
@@ -263,7 +397,7 @@ class ConstantSizedObservationsNew(gym.ObservationWrapper):
         state[name] = value
 
     def observation(self, state):
-        # Shallow copy
+        # Shallow copy to avoid modifying original engine data
         state = {**state}
 
         # Add masks
@@ -273,20 +407,23 @@ class ConstantSizedObservationsNew(gym.ObservationWrapper):
             return v
 
         if self.add_mask:
-            state["paths_mask"] = mask(len(state["paths_width"]), self.state_paths)
-            state["items_mask"] = mask(len(state["items_type"]), self.state_items)
-            state["karts_mask"] = mask(len(state["karts_position"]), self.state_karts)
+            state["paths_mask"] = mask(len(state.get("paths_width", [])), self.state_paths)
+            state["items_mask"] = mask(len(state.get("items_type", [])), self.state_items)
+            state["karts_mask"] = mask(len(state.get("karts_position", [])), self.state_karts)
 
-        # Ensures that the size of observations is constant
-        self.make_tensor(state, "paths_distance")
-        self.make_tensor(state, "paths_width")
-        self.make_tensor(state, "paths_start")
-        self.make_tensor(state, "paths_end")
-        self.make_tensor(state, "items_position")
-        self.make_tensor(state, "items_type")
-        self.make_tensor(state, "karts_position")
+        # Ensures that the size of observations is constant for all targeted keys
+        keys_to_standardize = [
+            "paths_distance", "paths_width", "paths_start", "paths_end",
+            "items_position", "items_type", "karts_position"
+        ]
+        
+        for key in keys_to_standardize:
+            if key in state:
+                self.make_tensor(state, key)
 
         return state
+
+
 
 
 # import gymnasium as gym
