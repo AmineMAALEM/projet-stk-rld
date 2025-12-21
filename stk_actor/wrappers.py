@@ -295,6 +295,14 @@ import sys
 # from pystk2_gymnasium.stk_env import STKRaceEnv
 # import pystk2
 
+import gymnasium as gym
+from gymnasium import spaces
+import numpy as np
+import copy
+import logging
+import sys
+
+# The README indicates this wrapper is used for 'supertuxkart/simple-v0'.
 class ConstantSizedObservationsNew(gym.ObservationWrapper):
     def __init__(
         self,
@@ -306,15 +314,11 @@ class ConstantSizedObservationsNew(gym.ObservationWrapper):
         add_mask=False,
         **kwargs,
     ):
-        """A simpler race environment with fixed width data
-
-        :param state_items: The number of items, defaults to 5
-        :param state_karts: The number of karts, defaults to 5
-        """
+        """A simpler race environment with fixed width data"""
         super().__init__(env, **kwargs)
         
-        # Engine optimization: limit the number of paths computed by SuperTuxKart
-        # Using hasattr for safer checks if STKRaceEnv is not directly imported
+        # 1. Engine Optimization
+        # Limit paths calculation to save performance.
         unwrapped = env.unwrapped
         if hasattr(unwrapped, 'max_paths') and unwrapped.max_paths is None:
             logging.info("Setting unwrapped environment max_paths to %d", state_paths)
@@ -326,98 +330,88 @@ class ConstantSizedObservationsNew(gym.ObservationWrapper):
         self.state_karts = state_karts
         self.state_paths = state_paths
 
-        # Override some keys in the observation space
+        # 2. Observation Space Transformation
+        # We transform 'Sequence' spaces into fixed-size 'Box' or 'MultiDiscrete' spaces.
         self._observation_space = space = copy.deepcopy(self.env.observation_space)
 
-        space["paths_distance"] = spaces.Box(
-            0, float("inf"), shape=(self.state_paths, 2), dtype=np.float32
-        )
-        space["paths_width"] = spaces.Box(
-            0, float("inf"), shape=(self.state_paths, 1), dtype=np.float32
-        )
-        space["paths_start"] = spaces.Box(
-            -float("inf"), float("inf"), shape=(self.state_paths, 3), dtype=np.float32
-        )
-        space["paths_end"] = spaces.Box(
-            -float("inf"), float("inf"), shape=(self.state_paths, 3), dtype=np.float32
-        )
-        space["items_position"] = spaces.Box(
-            -float("inf"), float("inf"), shape=(self.state_items, 3), dtype=np.float32
-        )
+        # Path observations (Distance, Width, Start, End)
+        space["paths_distance"] = spaces.Box(0, float("inf"), shape=(self.state_paths, 2), dtype=np.float32)
+        space["paths_width"] = spaces.Box(0, float("inf"), shape=(self.state_paths, 1), dtype=np.float32)
+        space["paths_start"] = spaces.Box(-float("inf"), float("inf"), shape=(self.state_paths, 3), dtype=np.float32)
+        space["paths_end"] = spaces.Box(-float("inf"), float("inf"), shape=(self.state_paths, 3), dtype=np.float32)
         
-        # MultiDiscrete space for items
-        # In actual pystk2-gymnasium, n_item_types is derived from pystk2.Item
-        n_item_types = 20 # Fallback value if pystk2 is not available
-        space["items_type"] = spaces.MultiDiscrete(
-            [n_item_types for _ in range(self.state_items)]
-        )
-        
-        space["karts_position"] = spaces.Box(
-            -float("inf"), float("inf"), shape=(self.state_karts, 3)
-        )
+        # Item and Kart positions
+        space["items_position"] = spaces.Box(-float("inf"), float("inf"), shape=(self.state_items, 3), dtype=np.float32)
+        space["karts_position"] = spaces.Box(-float("inf"), float("inf"), shape=(self.state_karts, 3))
 
+        # Based on your obs.keys, items_type is Discrete(7).
+        n_item_types = 7 
+        space["items_type"] = spaces.MultiDiscrete([n_item_types for _ in range(self.state_items)])
+
+        # 3. Masking Logic
+        # Adds binary flags to indicate if a data slot is real or padded.
         self.add_mask = add_mask
         if add_mask:
-            space["paths_mask"] = spaces.Box(
-                0, 1, shape=(self.state_paths,), dtype=np.int8
-            )
-            space["items_mask"] = spaces.Box(
-                0, 1, shape=(self.state_items,), dtype=np.int8
-            )
-            space["karts_mask"] = spaces.Box(
-                0, 1, shape=(self.state_karts,), dtype=np.int8
-            )
+            space["paths_mask"] = spaces.Box(0, 1, shape=(self.state_paths,), dtype=np.int8)
+            space["items_mask"] = spaces.Box(0, 1, shape=(self.state_items,), dtype=np.int8)
+            space["karts_mask"] = spaces.Box(0, 1, shape=(self.state_karts,), dtype=np.int8)
 
     def make_tensor(self, state, name: str, default_value=0):
+        """Standardizes variable length data from Sequence keys."""
         value = state[name]
         space = self.observation_space[name]
 
-        value = np.stack(value)
+        # Convert the list of arrays (Sequence) into a single NumPy array
+        value = np.stack(value) if len(value) > 0 else np.empty((0,) + space.shape[1:], dtype=np.float32)
+        
+        # Verify that the inner dimensions (e.g., 3 for vectors) match the space.
         assert (
             space.shape[1:] == value.shape[1:]
         ), f"Shape mismatch for {name}: {space.shape} vs {value.shape}"
 
         delta = space.shape[0] - value.shape[0]
         if delta > 0:
+            # PADDING: Fill the remaining slots with zeros or default_value
             shape = [delta] + list(space.shape[1:])
             
-            # FIX: MultiDiscrete does not have .dtype. We use getattr or fallback to the data's dtype
+            # FIX: Use getattr to handle MultiDiscrete which does not have .dtype
             target_dtype = getattr(space, 'dtype', value.dtype)
             
             value = np.concatenate(
                 [value, np.full(shape, default_value, dtype=target_dtype)], axis=0
             )
         elif delta < 0:
-            # Truncate to the fixed length
+            # TRUNCATION: Cut data that exceeds the fixed width.
             value = value[:space.shape[0]]
 
+        # Final check to ensure output exactly matches the redefined Gymnasium space
         assert (
             space.shape == value.shape
         ), f"Shape mismatch for {name}: {space.shape} vs {value.shape}"
         state[name] = value
 
     def observation(self, state):
-        # Shallow copy to avoid modifying original engine data
-        state = {**state}
+        """Processes the raw dictionary from the environment."""
+        state = {**state} # Shallow copy to preserve original data
 
-        # Add masks
-        def mask(length: int, size: int):
+        # Mask helper function
+        def create_mask(length: int, size: int):
             v = np.zeros((size,), dtype=np.int8)
-            v[:length] = 1
+            v[:min(length, size)] = 1
             return v
 
         if self.add_mask:
-            state["paths_mask"] = mask(len(state.get("paths_width", [])), self.state_paths)
-            state["items_mask"] = mask(len(state.get("items_type", [])), self.state_items)
-            state["karts_mask"] = mask(len(state.get("karts_position", [])), self.state_karts)
+            state["paths_mask"] = create_mask(len(state.get("paths_width", [])), self.state_paths)
+            state["items_mask"] = create_mask(len(state.get("items_type", [])), self.state_items)
+            state["karts_mask"] = create_mask(len(state.get("karts_position", [])), self.state_karts)
 
-        # Ensures that the size of observations is constant for all targeted keys
-        keys_to_standardize = [
+        # Standardize all sequence-based keys according to the README specs.
+        standard_keys = [
             "paths_distance", "paths_width", "paths_start", "paths_end",
             "items_position", "items_type", "karts_position"
         ]
         
-        for key in keys_to_standardize:
+        for key in standard_keys:
             if key in state:
                 self.make_tensor(state, key)
 
