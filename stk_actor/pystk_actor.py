@@ -14,7 +14,7 @@ except ImportError:
     from wrappers import ActionConversionWrapper, UltraWrapper
 
 
-env_name = "supertuxkart/multi-full-v0"
+env_name = "supertuxkart/simple-v0"
 player_name = "Team_PPO_Final"
 
 def get_wrappers() -> List[Callable[[gym.Env], gym.Wrapper]]:
