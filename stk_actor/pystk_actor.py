@@ -15,7 +15,7 @@ except ImportError:
 
 
 env_name = "supertuxkart/simple-v0"
-player_name = "Team_PPO_Final"
+player_name = "Vroom Vroom"
 
 def get_wrappers() -> List[Callable[[gym.Env], gym.Wrapper]]:
     # L'ordre dans la liste [W1, W2] signifie W2(W1(env)).
